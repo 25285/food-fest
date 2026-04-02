@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Student Dashboard - Ora.Co</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .progress-bar { transition: width 1s linear; }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen flex flex-col p-6 text-white max-w-md mx-auto relative">
+    
+    <div class="flex-grow">
+        <div class="flex justify-between items-center mb-8 mt-4">
+            <div>
+                <h2 class="text-2xl font-bold">My Tickets</h2>
+                <p class="text-sm text-slate-400">{{ email }}</p>
+            </div>
+            <a href="/logout" class="text-red-400 text-sm font-semibold hover:text-red-300">Logout</a>
+        </div>
+
+        <div class="space-y-6">
+            <!-- Food Fest Card -->
+            <div class="bg-slate-800 rounded-2xl p-6 text-center border border-slate-700 shadow-lg relative overflow-hidden">
+                <h3 class="text-xl font-bold text-orange-400 mb-4">Food Fest</h3>
+                <div id="qr-food" class="min-h-[150px] flex items-center justify-center transition-all duration-300"></div>
+                <div id="timer-food" class="hidden mt-4 w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                    <div id="progress-food" class="bg-orange-500 h-full w-full progress-bar"></div>
+                </div>
+            </div>
+
+            <!-- DJ Night Card -->
+            <div class="bg-slate-800 rounded-2xl p-6 text-center border border-slate-700 shadow-lg relative overflow-hidden">
+                <h3 class="text-xl font-bold text-purple-400 mb-4">DJ Night</h3>
+                <div id="qr-dj" class="min-h-[150px] flex items-center justify-center transition-all duration-300"></div>
+                <div id="timer-dj" class="hidden mt-4 w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                    <div id="progress-dj" class="bg-purple-500 h-full w-full progress-bar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Company Branding -->
+    <div class="mt-12 text-center pb-4">
+        <p class="text-slate-500 text-sm font-medium tracking-widest uppercase">
+            Powered by <span class="text-white font-bold tracking-normal capitalize">Ora.Co</span>
+        </p>
+    </div>
+
+    <script>
+        let intervals = {};
+        let timeRemaining = {};
+
+        function checkEventTimes() {
+            const currentHour = new Date().getHours();
+
+            // Setup Food (13:00)
+            if (!intervals['food']) {
+                if (currentHour >= 13) document.getElementById('qr-food').innerHTML = `<button onclick="startDynamicQR('food')" class="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-xl font-semibold transition">Generate QR Code</button>`;
+                else showLock('food', '1:00 PM');
+            }
+
+            // Setup DJ (17:00)
+            if (!intervals['dj']) {
+                if (currentHour >= 17) document.getElementById('qr-dj').innerHTML = `<button onclick="startDynamicQR('dj')" class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-xl font-semibold transition">Generate QR Code</button>`;
+                else showLock('dj', '5:00 PM');
+            }
+        }
+
+        function showLock(event, time) {
+            document.getElementById(`qr-${event}`).innerHTML = `
+                <div class="text-slate-500 flex flex-col items-center">
+                    <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <p class="text-sm font-semibold">Unlocks at ${time}</p>
+                </div>`;
+        }
+
+        function startDynamicQR(event) {
+            document.getElementById(`timer-${event}`).classList.remove('hidden');
+            fetchQR(event); // Fetch immediately
+            
+            timeRemaining[event] = 30;
+            
+            // UI Countdown every 1 second
+            setInterval(() => {
+                timeRemaining[event]--;
+                document.getElementById(`progress-${event}`).style.width = `${(timeRemaining[event] / 30) * 100}%`;
+                
+                // Fetch new QR every 30 seconds
+                if (timeRemaining[event] <= 0) {
+                    timeRemaining[event] = 30;
+                    document.getElementById(`progress-${event}`).style.transition = 'none'; // reset snap
+                    document.getElementById(`progress-${event}`).style.width = '100%';
+                    setTimeout(() => document.getElementById(`progress-${event}`).style.transition = 'width 1s linear', 50);
+                    fetchQR(event);
+                }
+            }, 1000);
+
+            intervals[event] = true;
+        }
+
+        function fetchQR(event) {
+            fetch(`/generate-qr/${event}`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.qr) {
+                    document.getElementById(`qr-${event}`).innerHTML = `
+                        <div class="flex flex-col items-center">
+                            <div class="bg-white p-3 rounded-xl inline-block mb-3 border-4 border-slate-700">
+                                <img src="${data.qr}" width="180" height="180" alt="QR Code">
+                            </div>
+                            <p class="text-xs text-green-400 font-semibold">Refreshes every 30s</p>
+                        </div>`;
+                }
+            });
+        }
+
+        checkEventTimes();
+        setInterval(checkEventTimes, 60000); // Check unlock time every minute
+    </script>
+</body>
+</html>
