@@ -141,21 +141,21 @@ def generate_qr(event):
         return jsonify({"error": "Unauthorized"}), 401
 
     email = session['email']
-            current_hour = datetime.now().hour
+    current_hour = datetime.now().hour
 
-# 🍱 Lunch: allowed till 3 PM (15)
-        if event == 'food' and current_hour >= 15:
+    # 🍱 Lunch: allowed till 3 PM
+    if event == 'food' and current_hour >= 15:
         return jsonify({"error": "Lunch QR closed after 3 PM"}), 403
 
-# 🎧 DJ: only between 5 PM (17) and 6 PM (18)
-        if event == 'dj' and not (17 <= current_hour < 18):
+    # 🎧 DJ: only between 5 PM and 6 PM
+    if event == 'dj' and not (17 <= current_hour < 18):
         return jsonify({"error": "DJ QR only available between 5 PM and 6 PM"}), 403
 
     # Create secure JWT token
     payload = {
         "email": email,
         "event": event,
-        "exp": datetime.utcnow() + timedelta(hours=6),  # expires in 6 hrs
+        "exp": datetime.utcnow() + timedelta(hours=6),
         "iat": datetime.utcnow()
     }
 
