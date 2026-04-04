@@ -1,27 +1,36 @@
-from flask import Flask, render_template, request, redirect, session, jsonify
-import sqlite3
-from datetime import datetime, timedelta
-import jwt
-import uuid
-import requests
+import os
 import random
+import sqlite3
+import requests
+import jwt
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from flask import Flask, render_template, request, redirect, session, jsonify
 
 app = Flask(__name__)
-app.secret_key = "super_secret_key_change_this"
-JWT_SECRET = "jwt_secret_change_this"
 
-# -------- EMAIL CONFIG -------- #
-EMAILJS_SERVICE_ID = "service_rgxfs9o"
-EMAILJS_TEMPLATE_ID = "template_7m5vyuj"
-EMAILJS_USER_ID = "QTYpAJGfLL6Wx5GRt"
-EMAILJS_PRIVATE_KEY = "S8ZCy-j38GyIAqvBSFjPU"
+# -------- CONFIG & SECRETS -------- #
+# Set these in your Render Environment Variables!
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_secret_key_change_this")
+JWT_SECRET = os.environ.get("JWT_SECRET", "jwt_secret_change_this")
 
-otp_store = {}
+# Email Config (ROTATE YOUR PRIVATE KEY IN EMAILJS DASHBOARD!)
+EMAILJS_SERVICE_ID = os.environ.get("EMAILJS_SERVICE_ID", "service_rgxfs9o")
+EMAILJS_TEMPLATE_ID = os.environ.get("EMAILJS_TEMPLATE_ID", "template_7m5vyuj")
+EMAILJS_USER_ID = os.environ.get("EMAILJS_USER_ID", "QTYpAJGfLL6Wx5GRt")
+EMAILJS_PRIVATE_KEY = os.environ.get("EMAILJS_PRIVATE_KEY", "YOUR_NEW_PRIVATE_KEY")
+
+# Change this to your local timezone (e.g., "Asia/Kolkata", "America/New_York", "Europe/London")
+# Render uses UTC by default, which messes up your hour-based event logic.
+LOCAL_TZ = ZoneInfo(os.environ.get("TZ", "Asia/Kolkata"))
 
 # -------- DATABASE -------- #
 def get_db():
-    conn = sqlite3.connect('database.db')
+    # check_same_thread=False is required for Gunicorn workers
+    conn = sqlite3.connect('database.db', check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # Enable Write-Ahead Logging for better concurrent performance
+    conn.execute('pragma journal_mode=wal')
     return conn
 
 def init_db():
@@ -41,6 +50,13 @@ def init_db():
         created_at TIMESTAMP
     )''')
 
+    # New Table to securely store OTPs across server workers
+    c.execute('''CREATE TABLE IF NOT EXISTS otps (
+        email TEXT PRIMARY KEY,
+        otp TEXT,
+        created_at TIMESTAMP
+    )''')
+
     # Sample users
     c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('student@gmail.com', 'student'))
     c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('manager@gmail.com', 'manager'))
@@ -50,9 +66,17 @@ def init_db():
 
 init_db()
 
-# -------- OTP -------- #
+# -------- OTP LOGIC -------- #
 def generate_otp():
     return str(random.randint(1000, 9999))
+
+def save_otp(email, otp):
+    conn = get_db()
+    # REPLACE INTO updates the OTP if the user requests a new one
+    conn.execute("REPLACE INTO otps (email, otp, created_at) VALUES (?, ?, ?)", 
+                 (email, otp, datetime.now(timezone.utc)))
+    conn.commit()
+    conn.close()
 
 def send_otp_email(email, otp):
     try:
@@ -63,9 +87,11 @@ def send_otp_email(email, otp):
             "accessToken": EMAILJS_PRIVATE_KEY,
             "template_params": {"to_email": email, "otp": otp}
         }
-        response = requests.post("https://api.emailjs.com/api/v1.0/email/send", json=payload)
+        # Added timeout=5 to prevent server freeze if EmailJS is slow
+        response = requests.post("https://api.emailjs.com/api/v1.0/email/send", json=payload, timeout=5)
         return response.status_code == 200
-    except:
+    except Exception as e:
+        print(f"Email error: {e}")
         return False
 
 # -------- AUTH HELPERS -------- #
@@ -98,12 +124,12 @@ def login(role):
             return render_template('login.html', step="enter", role=role, error="User not found")
 
         otp = generate_otp()
-        otp_store[email] = otp
+        save_otp(email, otp) # Saves to Database instead of Memory
 
         if send_otp_email(email, otp):
             return render_template('login.html', step="verify", email=email, role=role)
         else:
-            return render_template('login.html', step="enter", role=role, error="OTP failed")
+            return render_template('login.html', step="enter", role=role, error="Failed to send OTP. Try again.")
 
     return render_template('login.html', step="enter", role=role)
 
@@ -111,13 +137,21 @@ def login(role):
 @app.route('/verify', methods=['GET', 'POST'])
 def verify():
     if request.method == 'GET':
-        return "Use POST to verify OTP"
+        return redirect('/')
 
     email = request.form['email']
     otp = request.form['otp']
     role = request.form['role']
 
-    if otp_store.get(email) == otp:
+    conn = get_db()
+    stored_otp_record = conn.execute("SELECT otp FROM otps WHERE email=?", (email,)).fetchone()
+
+    if stored_otp_record and stored_otp_record['otp'] == otp:
+        # Clear the OTP from DB after successful use
+        conn.execute("DELETE FROM otps WHERE email=?", (email,))
+        conn.commit()
+        conn.close()
+
         login_user(email, role)
 
         if role == 'student':
@@ -125,6 +159,7 @@ def verify():
         else:
             return redirect('/scanner')
 
+    conn.close()
     return render_template('login.html', step="verify", email=email, role=role, error="Invalid OTP")
 
 # -------- DASHBOARD -------- #
@@ -141,7 +176,10 @@ def generate_qr(event):
         return jsonify({"error": "Unauthorized"}), 401
 
     email = session['email']
-    current_hour = datetime.now().hour
+    
+    # Use Local Timezone to enforce rules correctly
+    current_time = datetime.now(LOCAL_TZ)
+    current_hour = current_time.hour
 
     # 🍱 Lunch: allowed till 3 PM
     if event == 'food' and current_hour >= 15:
@@ -151,31 +189,32 @@ def generate_qr(event):
     if event == 'dj' and not (17 <= current_hour < 18):
         return jsonify({"error": "DJ QR only available between 5 PM and 6 PM"}), 403
 
-    # Create secure JWT token
-    payload = {
-        "email": email,
-        "event": event,
-        "exp": datetime.utcnow() + timedelta(hours=6),
-        "iat": datetime.utcnow()
-    }
-
-    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
     conn = get_db()
 
-    existing = conn.execute("SELECT status FROM qr_codes WHERE token=?", (token,)).fetchone()
+    # CHECK IF USER ALREADY HAS A QR FOR THIS EVENT to prevent infinite generation
+    existing = conn.execute("SELECT token FROM qr_codes WHERE email=? AND event=?", (email, event)).fetchone()
 
-    if not existing:
+    if existing:
+        token = existing['token']
+    else:
+        # Create secure JWT token if one doesn't exist
+        payload = {
+            "email": email,
+            "event": event,
+            "exp": datetime.utcnow() + timedelta(hours=6),
+            "iat": datetime.utcnow()
+        }
+        token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+        
         conn.execute(
-            "INSERT INTO qr_codes VALUES (?, ?, ?, ?, ?)",
-            (token, email, event, "unused", datetime.now())
+            "INSERT INTO qr_codes (token, email, event, status, created_at) VALUES (?, ?, ?, ?, ?)",
+            (token, email, event, "unused", datetime.now(timezone.utc))
         )
         conn.commit()
 
     conn.close()
 
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={token}"
-
     return jsonify({"qr": qr_url})
 
 # -------- SCANNER -------- #
@@ -194,14 +233,13 @@ def validate():
     token = request.json.get('token')
 
     try:
-        decoded = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
         return jsonify({"status": "Expired QR"})
     except jwt.InvalidTokenError:
         return jsonify({"status": "Invalid QR"})
 
     conn = get_db()
-
     qr_data = conn.execute("SELECT * FROM qr_codes WHERE token=?", (token,)).fetchone()
 
     if not qr_data:
@@ -224,7 +262,7 @@ def validate():
         "status": "Accepted",
         "email": qr_data['email'],
         "event": qr_data['event'],
-        "time": str(datetime.now())
+        "time": datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
     })
 
 # -------- LOGOUT -------- #
@@ -235,5 +273,5 @@ def logout():
 
 # -------- RUN -------- #
 if __name__ == '__main__':
-    if __name__ == "__main__":
-     app.run()
+    # Removed the duplicate if __name__ block
+    app.run(debug=True)
