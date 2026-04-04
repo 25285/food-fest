@@ -39,6 +39,7 @@ def init_db():
     )''')
     
     c.execute("INSERT OR IGNORE INTO users (email, role) VALUES (?, ?)", ('brothersreddy2009@gmail.com', 'student'))
+    c.execute("INSERT OR IGNORE INTO users (email, role) VALUES (?, ?)", ('mandaraju766@gmail.com', 'student'))
     c.execute("INSERT OR IGNORE INTO users (email, role) VALUES (?, ?)", ('mandasriramachandraraghavaredd@gmail.com', 'manager')) 
     
     conn.commit()
