@@ -168,13 +168,13 @@ def generate_qr(event):
     ).fetchone()
 
     if existing:
-    token = existing['token']  # reuse same QR
+        token = existing['token']  # reuse same QR
     else:
-    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-    conn.execute(
-        "INSERT INTO qr_codes VALUES (?, ?, ?, ?, ?)",
-        (token, email, event, "unused", datetime.now())
-    )
+        token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+        conn.execute(
+            "INSERT INTO qr_codes VALUES (?, ?, ?, ?, ?)",
+            (token, email, event, "unused", datetime.now())
+        )
     conn.commit()
 
     if not existing:
