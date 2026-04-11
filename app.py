@@ -145,7 +145,7 @@ def generate_qr(event):
 
     # 🍱 Lunch
     if event == 'food' and current_hour >= 15:
-        return jsonify({"error": "Lunch QR closed after 3 PM"}), 403
+        return jsonify({"error": "Lunch QR closed after 6 PM"}), 403
 
     # 🎧 DJ
     if event == 'dj' and not (17 <= current_hour < 18):
