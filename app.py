@@ -42,8 +42,8 @@ def init_db():
     )''')
 
     # Sample users
-    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('student@gmail.com', 'student'))
-    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('manager@gmail.com', 'manager'))
+    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('brothersreddy2009@gmail.com', 'student'))
+    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('mandasriramachandraraghavredd@gmail.com', 'manager'))
 
     conn.commit()
     conn.close()
