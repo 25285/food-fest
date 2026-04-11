@@ -162,7 +162,20 @@ def generate_qr(event):
 
     conn = get_db()
 
-    existing = conn.execute("SELECT status FROM qr_codes WHERE token=?", (token,)).fetchone()
+    existing = conn.execute(
+    "SELECT token FROM qr_codes WHERE email=? AND event=? AND status='unused'",
+    (email, event)
+    ).fetchone()
+
+    if existing:
+    token = existing['token']  # reuse same QR
+    else:
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    conn.execute(
+        "INSERT INTO qr_codes VALUES (?, ?, ?, ?, ?)",
+        (token, email, event, "unused", datetime.now())
+    )
+    conn.commit()
 
     if not existing:
         conn.execute(
