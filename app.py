@@ -135,6 +135,7 @@ def dashboard():
     return render_template('dashboard.html', email=session['email'])
 
 # -------- GENERATE QR -------- #
+# -------- GENERATE QR -------- #
 @app.route('/generate-qr/<event>')
 def generate_qr(event):
     if not is_student():
@@ -143,8 +144,8 @@ def generate_qr(event):
     email = session['email']
     current_hour = datetime.now().hour
 
-    # 🍱 Lunch
-    if event == 'food' and current_hour >= 15:
+    # 🍱 Lunch - Changed 15 to 18 (6 PM)
+    if event == 'food' and current_hour >= 18:
         return jsonify({"error": "Lunch QR closed after 6 PM"}), 403
 
     # 🎧 DJ
@@ -158,26 +159,18 @@ def generate_qr(event):
         "iat": datetime.utcnow()
     }
 
-    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
     conn = get_db()
 
     existing = conn.execute(
-    "SELECT token FROM qr_codes WHERE email=? AND event=? AND status='unused'",
-    (email, event)
+        "SELECT token FROM qr_codes WHERE email=? AND event=? AND status='unused'",
+        (email, event)
     ).fetchone()
 
     if existing:
         token = existing['token']  # reuse same QR
     else:
         token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-        conn.execute(
-            "INSERT INTO qr_codes VALUES (?, ?, ?, ?, ?)",
-            (token, email, event, "unused", datetime.now())
-        )
-    conn.commit()
-
-    if not existing:
+        # Insert exactly ONCE
         conn.execute(
             "INSERT INTO qr_codes VALUES (?, ?, ?, ?, ?)",
             (token, email, event, "unused", datetime.now())
@@ -189,7 +182,6 @@ def generate_qr(event):
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={token}"
 
     return jsonify({"qr": qr_url})
-
 # -------- SCANNER -------- #
 @app.route('/scanner')
 def scanner():
