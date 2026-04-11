@@ -43,7 +43,7 @@ def init_db():
 
     # Sample users
     c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('brothersreddy2009@gmail.com', 'student'))
-    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('mandasriramachandraraghavredd@gmail.com', 'manager'))
+    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?)", ('mandasriramachandraraghavaredd@gmail.com', 'manager'))
 
     conn.commit()
     conn.close()
