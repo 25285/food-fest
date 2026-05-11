@@ -7,14 +7,7 @@ import requests
 import random
 
 app = Flask(__name__)
-app.secret_key = "super_secret_key_change_this"
-JWT_SECRET = "jwt_secret_change_this"
-
-# -------- EMAIL CONFIG -------- #
-EMAILJS_SERVICE_ID = "service_rgxfs9o"
-EMAILJS_TEMPLATE_ID = "template_7m5vyuj"
-EMAILJS_USER_ID = "QTYpAJGfLL6Wx5GRt"
-EMAILJS_PRIVATE_KEY = "S8ZCy-j38GyIAqvBSFjPU"
+a"
 
 otp_store = {}
 
